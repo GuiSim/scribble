@@ -26,7 +26,7 @@ app = Flask(__name__)
 app_config = load_config()
 app.secret_key = app_config.get('flask_secret_key', 'fallback_dev_key_if_config_fails')
 
-APP_VERSION = '4.2.2'
+APP_VERSION = '4.2.3'
 @app.context_processor
 def inject_version():
     return dict(app_version=APP_VERSION)
@@ -296,39 +296,6 @@ def settings():
         save_config(config)
         flash('Settings saved successfully!', 'success')
         return redirect(url_for('settings'))
-
-    if request.method == 'POST':
-        name = request.form.get('name')
-        if not name:
-            flash('Campaign Name is required.', 'error')
-            return redirect(url_for('campaigns'))
-
-        # Handle Script Selection
-        selected_scripts = request.form.getlist('scripts')
-        script_paths_str = ",".join(selected_scripts)
-
-        # [NEW] Handle Default Logic
-        is_default = 'is_default' in request.form
-        if is_default:
-            # Unset default for all existing campaigns
-            Campaign.query.update({Campaign.is_default: False})
-
-        new_campaign = Campaign(
-            name=name,
-            discord_webhook=request.form.get('discord_webhook'),
-            system_prompt=request.form.get('system_prompt'),
-            script_paths=script_paths_str,
-            is_default=is_default # <--- Save status
-        )
-        try:
-            db.session.add(new_campaign)
-            db.session.commit()
-            flash(f'Campaign "{name}" created!', 'success')
-        except Exception as e:
-            db.session.rollback()
-            flash(f'Error creating campaign: {e}', 'error')
-
-        return redirect(url_for('campaigns'))
 
     return render_template('settings.html', config=config)
 
@@ -1286,7 +1253,8 @@ def retry_job(job_id):
     flash(f'Job "{job.step}" queued for retry.', 'success')
     return redirect(url_for('session_detail', session_id=job.session.id))
 
-if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+if not os.environ.get("SCRIBBLE_MIGRATE_ONLY") and \
+   (not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true"):
     job_manager = JobManager(app)
     job_manager.start()
 

@@ -170,8 +170,6 @@ class JobManager(threading.Thread):
                     target_user = job.step.split('transcribe:', 1)[1]
                     job.logs += f"\nTarget User: {target_user}"
                 
-                job.target_user = target_user 
-                
                 # Run Transcription
                 run_transcription(job, config, self.app)
                 
@@ -237,15 +235,8 @@ class JobManager(threading.Thread):
 
             # --- 4. DISCORD POSTING ---
             elif job.step == 'post_discord':
-                from llm_engine import send_to_discord
-                if session.summary_text:
-                    if send_to_discord(session.summary_text, config):
-                        job.logs += "\nPosted to Discord successfully."
-                    else:
-                        job.logs += "\nFailed to post to Discord."
-                else:
-                    job.logs += "\nNo summary text found to post."
-                
+                from llm_engine import run_discord_post
+                run_discord_post(job, config)
                 job.status = 'completed'
                 db.session.commit()
                 return

@@ -40,7 +40,8 @@ DEFAULT_CONFIG = {
     "llm_model": "gemini-2.5-flash",
     "llm_api_key": "",
     "llm_input_cost": 0.0,
-    "llm_output_cost": 0.0
+    "llm_output_cost": 0.0,
+    "ollama_url": ""
 }
 
 def load_config():

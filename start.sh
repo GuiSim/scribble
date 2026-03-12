@@ -23,7 +23,13 @@ if [ -n "$PUID" ] && [ -n "$PGID" ]; then
 
     # [NEW] Check & Run Database Migration
     echo "Checking for database migrations..."
+    until su scribble_user -c "python3 -c 'from database import db; from app import app; app.app_context().push(); db.engine.connect()'" > /dev/null 2>&1; do
+        echo "Waiting for database..."
+        sleep 3
+    done
+    export SCRIBBLE_MIGRATE_ONLY=1
     su scribble_user -c "python3 migrate.py"
+    unset SCRIBBLE_MIGRATE_ONLY
 
     echo "Starting Scribble as scribble_user..."
     # Switch user and run gunicorn
@@ -31,7 +37,13 @@ if [ -n "$PUID" ] && [ -n "$PGID" ]; then
 else
     # [NEW] Check & Run Database Migration
     echo "Checking for database migrations..."
+    until python3 -c "from database import db; from app import app; app.app_context().push(); db.engine.connect()" > /dev/null 2>&1; do
+        echo "Waiting for database..."
+        sleep 3
+    done
+    export SCRIBBLE_MIGRATE_ONLY=1
     python3 migrate.py
+    unset SCRIBBLE_MIGRATE_ONLY
 
     echo "Starting Scribble as root (Not Recommended)..."
     exec gunicorn --workers 1 --threads 4 --bind 0.0.0.0:13131 app:app
