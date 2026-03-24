@@ -94,10 +94,13 @@ def run_transcription(job, config, app):
         user_transcript_lines = []
         
         try:
+            whisper_language = config.get('whisper_language', '') or None
+            initial_prompt = config.get('whisper_initial_prompt', '') or None
             segments, info = model.transcribe(
-                file_path, 
+                file_path,
                 beam_size=config.get('whisper_beam_size', 5),
-                language=config.get('whisper_language', 'en'),
+                language=whisper_language,
+                initial_prompt=initial_prompt,
                 vad_filter=True,
                 vad_parameters=dict(
                     min_silence_duration_ms=500,

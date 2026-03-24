@@ -89,8 +89,11 @@
                         <option value="int8" {% if config.whisper_compute_type == 'int8' %}selected{% endif %}>int8</option>
                     </select>
 
-                    <label class="form-label">Language Code</label>
-                    <input type="text" name="whisper_language" class="form-control mb-2" value="{{ config.whisper_language }}">
+                    <label class="form-label">Language Code (blank = auto-detect)</label>
+                    <input type="text" name="whisper_language" class="form-control mb-2" value="{{ config.whisper_language }}" placeholder="e.g. en, fr, or leave blank for auto-detect">
+
+                    <label class="form-label">Initial Prompt (optional - helps with custom vocabulary)</label>
+                    <textarea name="whisper_initial_prompt" class="form-control mb-2" rows="3" placeholder="e.g. Partie de Daggerheart. Personnages: Kael'thas, Morwenna. Lieux: la Forêt de Niam'd'regal.">{{ config.whisper_initial_prompt }}</textarea>
 
                     <label class="form-label">Hugging Face Token (Optional)</label>
                     <div class="input-group mb-2">

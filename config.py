@@ -27,7 +27,8 @@ DEFAULT_CONFIG = {
     "whisper_batch_size": 16,
     "whisper_beam_size": 5,
     "whisper_compute_type": "int8",
-    "whisper_language": "en",
+    "whisper_language": "",
+    "whisper_initial_prompt": "",
     "hf_token": "",
 
     # VAD
