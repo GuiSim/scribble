@@ -33,10 +33,10 @@ class JobManager(threading.Thread):
 
     def run(self):
         logging.info("Job Manager Started...")
-        
+
         # Run Reset Logic Once on Boot
         self.reset_stuck_jobs()
-        
+
         while self.running:
             try:
                 with self.app.app_context():
@@ -60,7 +60,7 @@ class JobManager(threading.Thread):
         """
         session = job.session
         script_dir = "/data/scripts"
-        
+
         # Use script_paths (String) instead of scripts (Relationship)
         if not session.campaign or not session.campaign.script_paths:
             return
@@ -73,10 +73,10 @@ class JobManager(threading.Thread):
 
         # --- 1. PREPARE TEMP FILES ---
         job.logs += "\n[System] Staging temporary files for scripts..."
-        
+
         # [FIX] Ensure the directory exists before writing to it
         os.makedirs(session.directory_path, exist_ok=True)
-        
+
         transcript_path = os.path.join(session.directory_path, "session_transcript.txt")
         recap_path = os.path.join(session.directory_path, "session_recap.txt")
         files_to_cleanup = []
@@ -87,7 +87,7 @@ class JobManager(threading.Thread):
                 with open(transcript_path, 'w', encoding='utf-8') as f:
                     f.write(session.transcript_text)
                 files_to_cleanup.append(transcript_path)
-            
+
             # Stage Recap
             if session.summary_text:
                 with open(recap_path, 'w', encoding='utf-8') as f:
@@ -103,7 +103,7 @@ class JobManager(threading.Thread):
         for script_name in script_names:
             script_name = os.path.basename(script_name)
             script_full_path = os.path.join(script_dir, script_name)
-            
+
             if os.path.exists(script_full_path):
                 # Ensure executable
                 try:
@@ -113,7 +113,7 @@ class JobManager(threading.Thread):
 
                 job.logs += f"\nRunning: {script_name}"
                 db.session.commit()
-                
+
                 try:
                     # Pass recap path as $1, transcript path as $2
                     result = subprocess.run(
@@ -122,22 +122,22 @@ class JobManager(threading.Thread):
                         text=True,
                         timeout=300
                     )
-                    
+
                     if result.stdout:
                         job.logs += f"\n[STDOUT]: {result.stdout}"
                     if result.stderr:
                         job.logs += f"\n[STDERR]: {result.stderr}"
-                        
+
                     if result.returncode == 0:
                         job.logs += f"\nFinished: {script_name} (Success)"
                     else:
                         job.logs += f"\nFailed: {script_name} (Exit Code {result.returncode})"
-                        
+
                 except Exception as e:
                     job.logs += f"\nScript execution error: {str(e)}"
             else:
                 job.logs += f"\nSkipping: {script_name} (File not found at {script_full_path})"
-            
+
             db.session.commit()
 
         # --- 3. CLEANUP TEXT FILES ---
@@ -155,34 +155,39 @@ class JobManager(threading.Thread):
         NOTE: This runs inside the 'with self.app.app_context():' block from run()
         """
         logging.info(f"Processing Job {job.id}: {job.step} for Session {job.session_id}")
-        
+
         try:
             config = load_config()
             session = job.session # Access directly from job object (already attached)
-            
+
             target_user = None
 
             # --- 1. TRANSCRIPTION ---
             if job.step == 'transcribe' or job.step.startswith('transcribe:'):
                 from transcription_engine import run_transcription
-                
                 if job.step.startswith('transcribe:'):
                     target_user = job.step.split('transcribe:', 1)[1]
                     job.logs += f"\nTarget User: {target_user}"
-                
+
                 # Run Transcription
                 run_transcription(job, config, self.app)
-                
+
+                # ✅ FIX: Commit the completed status NOW, before any cleanup or
+                # follow-up work. This prevents the job from getting stuck in
+                # 'processing' if a crash/restart happens during cleanup below.
+                job.status = 'completed'
+                db.session.commit()
+
                 # [CLEANUP] Remove .flac files if Archive exists
                 archive_name = session.original_filename
                 archive_exists = False
                 if os.path.exists(os.path.join('/data/archive', archive_name)): archive_exists = True
                 if not archive_exists:
                     for f in os.listdir('/data/archive'):
-                        if f.endswith(archive_name): 
+                        if f.endswith(archive_name):
                             archive_exists = True
                             break
-                
+
                 if archive_exists:
                     job.logs += "\n[Cleanup] Removing source audio files..."
                     try:
@@ -191,7 +196,7 @@ class JobManager(threading.Thread):
                             if f.endswith('.flac'):
                                 os.remove(os.path.join(folder, f))
                     except Exception as e:
-                         job.logs += f"\n[Cleanup Warning] {e}"
+                        job.logs += f"\n[Cleanup Warning] {e}"
 
                 # Trigger Summarize ONLY if it was a FULL transcription
                 if not target_user:
@@ -201,26 +206,25 @@ class JobManager(threading.Thread):
                     session.status = "Analyzing"
                 else:
                     session.status = "Ready"
-                    job.status = 'completed'
 
-                db.session.commit()
+                db.session.commit()  # Second commit: queue summarize + update session status
                 return
 
             # --- 2. SUMMARIZATION (Auto & Manual) ---
             elif job.step in ['summarize', 'summarize_only']:
                 from llm_engine import run_summary
-                
+
                 should_post = (job.step == 'summarize')
-                
+
                 # Run LLM (Generates DB content)
                 run_summary(job, config, post_to_discord_enabled=should_post)
-                
+
                 # Run Scripts (Only for full summarize)
                 if job.step == 'summarize':
                     self.run_campaign_scripts(job, config)
                 else:
                     job.logs += "\nScript execution skipped (Recap Generation Only)."
-                
+
                 session.status = "Completed"
                 job.status = 'completed'
                 db.session.commit()
