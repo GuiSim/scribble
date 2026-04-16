@@ -26,7 +26,7 @@ app = Flask(__name__)
 app_config = load_config()
 app.secret_key = app_config.get('flask_secret_key', 'fallback_dev_key_if_config_fails')
 
-APP_VERSION = '4.2.5'
+APP_VERSION = '4.2.6'
 @app.context_processor
 def inject_version():
     return dict(app_version=APP_VERSION)
@@ -203,6 +203,8 @@ def parse_transcription_metrics(job_logs, transcripts):
 
             # Handle day rollover if needed, though unlikely for single file
             delta = end_time - start_time
+            if delta.total_seconds() < 0:
+                delta += timedelta(hours=24)
             metrics[current_user]['duration'] = str(delta)
 
             # Cleanup

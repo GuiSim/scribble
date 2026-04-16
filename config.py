@@ -10,10 +10,10 @@ DEFAULT_CONFIG = {
     # System
     "device": "cuda",
     "webui_password": "",
-    "flask_secret_key": "", # NEW: Secure session storage
+    "flask_secret_key": "",
     "archive_zip": False,
     "db_space_saver": True,
-    
+
     # Database
     "db_type": "sqlite",
     "db_address": "",
@@ -28,6 +28,9 @@ DEFAULT_CONFIG = {
     "whisper_beam_size": 5,
     "whisper_compute_type": "int8",
     "whisper_language": "",
+    "whisper_no_speech_threshold": 0.45,
+    "whisper_compression_ratio_threshold": 1.8,
+    "whisper_condition_on_previous_text": True,
     "whisper_initial_prompt": "",
     "hf_token": "",
 
@@ -35,10 +38,12 @@ DEFAULT_CONFIG = {
     "vad_method": "silero",
     "vad_onset": 0.5,
     "vad_offset": 0.363,
+    "vad_min_silence_ms": 1000,
+    "vad_max_speech_s": 20.0,
 
     # LLM
     "llm_provider": "Google",
-    "llm_model": "gemini-2.5-flash",
+    "llm_model": "gemini-flash-latest",
     "llm_api_key": "",
     "llm_input_cost": 0.0,
     "llm_output_cost": 0.0,

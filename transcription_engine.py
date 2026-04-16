@@ -37,28 +37,28 @@ def run_transcription(job, config, app):
     session = Session.query.get(job.session_id)
     if not session:
         raise Exception("Session not found")
-    
+
     # 1. Setup Logging
     db_handler = DBLogHandler(job.id, app)
     db_handler.setLevel(logging.INFO)
     fw_logger = logging.getLogger("faster_whisper")
     fw_logger.addHandler(db_handler)
     fw_logger.setLevel(logging.INFO)
-    
+
     job.logs += f"\nStarting transcription for: {session.original_filename}"
     db.session.commit()
-    
+
     target_user = getattr(job, 'target_user', None)
-    
+
     # 2. Configure Environment
     hf_token = config.get('hf_token')
     if hf_token: os.environ["HF_TOKEN"] = hf_token
-    
+
     # 3. Initialize Whisper
     device = config.get('device', 'cuda')
     compute_type = config.get('whisper_compute_type', 'int8')
     model_size = config.get('whisper_model', 'small')
-    
+
     try:
         model = WhisperModel(model_size, device=device, compute_type=compute_type)
     except Exception as e:
@@ -70,12 +70,12 @@ def run_transcription(job, config, app):
     flac_files = glob.glob(os.path.join(session.directory_path, "*.flac"))
     if not flac_files:
         raise Exception("No .flac files found.")
-    
+
     job.logs += f"\nFound {len(flac_files)} files to transcribe."
     db.session.commit()
-        
+
     master_transcript = []
-    
+
     # 5. Process each file
     for i, file_path in enumerate(flac_files):
         filename = os.path.basename(file_path)
@@ -83,16 +83,16 @@ def run_transcription(job, config, app):
             username = filename.split('-', 1)[1].rsplit('.', 1)[0]
         except:
             username = "Unknown"
-        
+
         if target_user and username != target_user:
             continue
-        
+
         timestamp = datetime.now().strftime('%H:%M:%S')
         job.logs += f"\n[{timestamp}] Transcribing: {filename} (User: {username})"
         db.session.commit()
-        
+
         user_transcript_lines = []
-        
+
         try:
             whisper_language = config.get('whisper_language', '') or None
             initial_prompt = config.get('whisper_initial_prompt', '') or None
@@ -101,13 +101,18 @@ def run_transcription(job, config, app):
                 beam_size=config.get('whisper_beam_size', 5),
                 language=whisper_language,
                 initial_prompt=initial_prompt,
+                condition_on_previous_text=config.get('whisper_condition_on_previous_text', True),
+                no_speech_threshold=config.get('whisper_no_speech_threshold', 0.45),
+                compression_ratio_threshold=config.get('whisper_compression_ratio_threshold', 1.8),
                 vad_filter=True,
                 vad_parameters=dict(
-                    min_silence_duration_ms=500,
-                    threshold=config.get('vad_onset', 0.5)
+                    threshold=config.get('vad_onset', 0.5),
+                    neg_threshold=config.get('vad_offset', 0.363),
+                    min_silence_duration_ms=config.get('vad_min_silence_ms', 1000),
+                    max_speech_duration_s=config.get('vad_max_speech_s', 20.0),
                 )
             )
-            
+
             for segment in segments:
                 start_fmt = format_timestamp(segment.start)
                 text = segment.text.strip()
@@ -115,17 +120,17 @@ def run_transcription(job, config, app):
                     line = f"[{start_fmt}] {username}: {text}"
                     master_transcript.append((segment.start, line))
                     user_transcript_lines.append(line)
-            
+
             user_full_text = "\n".join(user_transcript_lines)
 
             # Save to Disk
             transcript_dir = os.path.join(session.directory_path, "transcripts")
             os.makedirs(transcript_dir, exist_ok=True)
-            
+
             user_file_path = os.path.join(transcript_dir, f"{username}_transcript.txt")
             with open(user_file_path, 'w', encoding='utf-8') as f:
                 f.write(user_full_text)
-                
+
             # Save to DB
             existing_transcript = Transcript.query.filter_by(session_id=session.id, username=username).first()
             if existing_transcript:
@@ -138,11 +143,11 @@ def run_transcription(job, config, app):
                     content=user_full_text
                 )
                 db.session.add(new_transcript)
-                
+
             timestamp = datetime.now().strftime('%H:%M:%S')
             job.logs += f"\n[{timestamp}] - Completed {filename}: {len(user_transcript_lines)} lines saved."
             db.session.commit()
-            
+
         except Exception as e:
             job.logs += f"\nERROR processing file {filename}: {e}"
             db.session.commit()
@@ -150,18 +155,18 @@ def run_transcription(job, config, app):
 
     # 6. Cleanup & Save Master
     fw_logger.removeHandler(db_handler)
-            
-    master_transcript.sort(key=lambda x: x[0]) 
+
+    master_transcript.sort(key=lambda x: x[0])
     final_text = "\n".join([x[1] for x in master_transcript])
-    
+
     transcript_path = os.path.join(session.directory_path, "session_transcript.txt")
     with open(transcript_path, 'w', encoding='utf-8') as f:
         f.write(final_text)
-        
+
     job.logs += f"\nMaster transcript saved to: {transcript_path}"
-    
+
     session.transcript_text = final_text
     db.session.commit()
-    
+
     return True
-    
+
